@@ -2,6 +2,8 @@ import pygame
 import sys
 from typing import List, Tuple, Optional, Set
 import math
+import pygame_menu
+import random
 
 # Initialize Pygame
 pygame.init()
@@ -24,9 +26,21 @@ MOVE_HIGHLIGHT = (0, 255, 0, 128)
 MESSAGE_BOX_COLOR = (50, 50, 50)
 MESSAGE_BOX_BORDER = (100, 100, 100)
 
+# Game text translations
+COLORS = {
+    'white': 'Белые',
+    'black': 'Черные'
+}
+
+MESSAGES = {
+    'turn': '{} ходят',
+    'check': '{} под шахом!',
+    'checkmate': 'Мат! {} победили!',
+}
+
 # Initialize the screen
 screen = pygame.display.set_mode((WINDOW_SIZE, TOTAL_HEIGHT))
-pygame.display.set_caption('Chess Game')
+pygame.display.set_caption('Шахматы')
 
 class Piece:
     def __init__(self, color: str, piece_type: str, position: Tuple[int, int]):
@@ -345,6 +359,15 @@ class ChessBoard:
                         return False
         return True
 
+    def check_pawn_promotion(self, piece: Piece, end_row: int):
+        """Check if a pawn should be promoted and promote it to a queen if necessary"""
+        if piece.piece_type == 'pawn':
+            # Check if white pawn reached top row (0) or black pawn reached bottom row (7)
+            if (piece.color == 'white' and end_row == 0) or (piece.color == 'black' and end_row == 7):
+                # Promote to queen
+                return Piece(piece.color, 'queen', (end_row, piece.position[1]))
+        return piece
+
     def move_piece(self, start: Tuple[int, int], end: Tuple[int, int]) -> bool:
         start_row, start_col = start
         end_row, end_col = end
@@ -352,6 +375,9 @@ class ChessBoard:
         
         if piece and (end_row, end_col) in self.valid_moves:
             # Move the piece
+            # Check for pawn promotion
+            piece = self.check_pawn_promotion(piece, end_row)
+            
             self.board[end_row][end_col] = piece
             self.board[start_row][start_col] = None
             piece.position = (end_row, end_col)
@@ -380,6 +406,165 @@ class ChessBoard:
             return True
         return False
 
+class ChessAI:
+    def __init__(self, board: 'ChessBoard', color: str):
+        self.board = board
+        self.color = color
+
+    def make_move(self):
+        all_moves = []
+        for row in range(BOARD_SIZE):
+            for col in range(BOARD_SIZE):
+                piece = self.board.board[row][col]
+                if piece and piece.color == self.color:
+                    valid_moves = self.board.get_all_valid_moves(piece)
+                    for move in valid_moves:
+                        all_moves.append((piece.position, move))
+        
+        if all_moves:
+            start, end = random.choice(all_moves)
+            self.board.move_piece(start, end)
+
+class ChessGame:
+    def __init__(self, screen):
+        self.screen = screen
+        self.board = None
+        self.ai = None
+        self.game_mode = None
+        self.clock = pygame.time.Clock()
+        self.font = pygame.font.SysFont('Arial', 32)
+        self.paused = False
+        self.running = True
+        self.create_menus()
+
+    def create_menus(self):
+        theme = pygame_menu.themes.Theme(
+            background_color=(50, 50, 50),
+            title_background_color=(0, 0, 0),
+            title_font_size=30,
+            widget_padding=25
+        )
+
+        self.main_menu = pygame_menu.Menu(
+            height=TOTAL_HEIGHT,
+            theme=theme,
+            title='Шахматы',
+            width=WINDOW_SIZE
+        )
+
+        self.main_menu.add.button('Игра с собой', self.start_local_game)
+        self.main_menu.add.button('Игра с ИИ', self.start_ai_game)
+        self.main_menu.add.button('Выход', pygame_menu.events.EXIT)
+
+        self.pause_menu = pygame_menu.Menu(
+            height=TOTAL_HEIGHT,
+            theme=theme,
+            title='Пауза',
+            width=WINDOW_SIZE
+        )
+
+        self.pause_menu.add.button('Продолжить', self.unpause)
+        self.pause_menu.add.button('В главное меню', self.to_main_menu)
+        self.pause_menu.add.button('Выход', pygame_menu.events.EXIT)
+
+    def start_local_game(self):
+        self.game_mode = 'local'
+        self.board = ChessBoard()
+        self.ai = None
+        self.paused = False
+        self.running = True
+        self.run_game()
+
+    def start_ai_game(self):
+        self.game_mode = 'ai'
+        self.board = ChessBoard()
+        self.ai = ChessAI(self.board, 'black')
+        self.paused = False
+        self.running = True
+        self.run_game()
+
+    def unpause(self):
+        self.paused = False
+        self.pause_menu.disable()
+        return
+
+    def to_main_menu(self):
+        self.board = None
+        self.ai = None
+        self.paused = False
+        self.running = False
+        self.main_menu.mainloop(self.screen)
+
+    def handle_events(self):
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    self.paused = True
+                    return
+
+            if not self.board.game_over and event.type == pygame.MOUSEBUTTONDOWN and not self.paused:
+                mouse_pos = pygame.mouse.get_pos()
+                if mouse_pos[1] > MESSAGE_BOX_HEIGHT:
+                    col = mouse_pos[0] // SQUARE_SIZE
+                    row = (mouse_pos[1] - MESSAGE_BOX_HEIGHT) // SQUARE_SIZE
+                    
+                    clicked_piece = self.board.get_piece_at((row, col))
+                    
+                    if self.board.selected_piece:
+                        if self.board.move_piece(self.board.selected_piece.position, (row, col)):
+                            self.board.selected_piece = None
+                            self.board.valid_moves = []
+                            if self.game_mode == 'ai' and not self.board.game_over:
+                                self.ai.make_move()
+                        elif clicked_piece and clicked_piece.color == self.board.current_turn:
+                            self.board.selected_piece = clicked_piece
+                            self.board.valid_moves = self.board.get_all_valid_moves(clicked_piece)
+                        else:
+                            self.board.selected_piece = None
+                            self.board.valid_moves = []
+                    elif clicked_piece and clicked_piece.color == self.board.current_turn:
+                        if self.game_mode == 'ai' and clicked_piece.color == 'black':
+                            return
+                        self.board.selected_piece = clicked_piece
+                        self.board.valid_moves = self.board.get_all_valid_moves(clicked_piece)
+
+    def draw_game(self):
+        self.screen.fill(BLACK)
+        
+        current_color = COLORS[self.board.current_turn]
+        if self.board.is_check and not self.board.is_checkmate:
+            message = MESSAGES['check'].format(current_color)
+        elif self.board.is_checkmate:
+            winner_color = COLORS['white'] if self.board.current_turn == "black" else COLORS['black']
+            message = MESSAGES['checkmate'].format(winner_color)
+        else:
+            message = MESSAGES['turn'].format(current_color)
+        
+        draw_message_box(self.screen, message, self.font)
+        
+        board_surface = pygame.Surface((WINDOW_SIZE, WINDOW_SIZE))
+        self.board.draw(board_surface)
+        self.screen.blit(board_surface, (0, MESSAGE_BOX_HEIGHT))
+        
+        pygame.display.flip()
+
+    def run_game(self):
+        self.running = True
+        while self.running:
+            if self.paused:
+                self.pause_menu.enable()
+                self.pause_menu.mainloop(self.screen, disable_loop=False)
+                continue
+            
+            self.handle_events()
+            if self.board:
+                self.draw_game()
+            self.clock.tick(60)
+
 def draw_message_box(surface: pygame.Surface, message: str, font: pygame.font.Font):
     # Draw message box background
     pygame.draw.rect(surface, MESSAGE_BOX_COLOR, (0, 0, WINDOW_SIZE, MESSAGE_BOX_HEIGHT))
@@ -393,60 +578,8 @@ def draw_message_box(surface: pygame.Surface, message: str, font: pygame.font.Fo
     surface.blit(text, text_rect)
 
 def main():
-    clock = pygame.time.Clock()
-    board = ChessBoard()
-    font = pygame.font.Font(None, 32)
-    
-    while True:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
-            
-            if not board.game_over and event.type == pygame.MOUSEBUTTONDOWN:
-                mouse_pos = pygame.mouse.get_pos()
-                # Adjust mouse position to account for message box
-                if mouse_pos[1] > MESSAGE_BOX_HEIGHT:
-                    col = mouse_pos[0] // SQUARE_SIZE
-                    row = (mouse_pos[1] - MESSAGE_BOX_HEIGHT) // SQUARE_SIZE
-                    
-                    clicked_piece = board.get_piece_at((row, col))
-                    
-                    if board.selected_piece:
-                        if board.move_piece(board.selected_piece.position, (row, col)):
-                            board.selected_piece = None
-                            board.valid_moves = []
-                        elif clicked_piece and clicked_piece.color == board.current_turn:
-                            board.selected_piece = clicked_piece
-                            board.valid_moves = board.get_all_valid_moves(clicked_piece)
-                        else:
-                            board.selected_piece = None
-                            board.valid_moves = []
-                    elif clicked_piece and clicked_piece.color == board.current_turn:
-                        board.selected_piece = clicked_piece
-                        board.valid_moves = board.get_all_valid_moves(clicked_piece)
-
-        # Draw everything
-        screen.fill(BLACK)
-        
-        # Get appropriate message
-        message = f"{board.current_turn.capitalize()}'s turn"
-        if board.is_check and not board.is_checkmate:
-            message = f"{board.current_turn.capitalize()} is in check!"
-        elif board.is_checkmate:
-            winner = "White" if board.current_turn == "black" else "Black"
-            message = f"Checkmate! {winner} wins!"
-        
-        # Draw message box
-        draw_message_box(screen, message, font)
-        
-        # Draw board and pieces (shifted down by MESSAGE_BOX_HEIGHT)
-        board_surface = pygame.Surface((WINDOW_SIZE, WINDOW_SIZE))
-        board.draw(board_surface)
-        screen.blit(board_surface, (0, MESSAGE_BOX_HEIGHT))
-        
-        pygame.display.flip()
-        clock.tick(60)
+    game = ChessGame(screen)
+    game.main_menu.mainloop(screen)
 
 if __name__ == "__main__":
     main()

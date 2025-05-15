@@ -4,6 +4,7 @@ from typing import List, Tuple, Optional, Set
 import math
 import pygame_menu
 import random
+import os
 
 # Initialize Pygame
 pygame.init()
@@ -12,8 +13,20 @@ pygame.init()
 WINDOW_SIZE = 600
 BOARD_SIZE = 8
 SQUARE_SIZE = WINDOW_SIZE // BOARD_SIZE
-MESSAGE_BOX_HEIGHT = 50
+MESSAGE_BOX_HEIGHT = 60
 TOTAL_HEIGHT = WINDOW_SIZE + MESSAGE_BOX_HEIGHT
+
+# Load font
+FONT_PATH = os.path.join('assets', 'fonts', 'new_font.ttf')
+FONT_SIZE = 16
+MENU_FONT_SIZE = 24
+
+# Загрузка шрифта
+try:
+    GAME_FONT = pygame.font.Font(FONT_PATH, FONT_SIZE)
+except Exception as e:
+    print(f"Error loading font: {e}")
+    GAME_FONT = pygame.font.SysFont('Arial', FONT_SIZE)
 
 # Colors
 WHITE = (255, 255, 255)
@@ -28,19 +41,43 @@ MESSAGE_BOX_BORDER = (100, 100, 100)
 
 # Game text translations
 COLORS = {
-    'white': 'Белые',
-    'black': 'Черные'
+    'white': 'White',
+    'black': 'Black'
 }
 
 MESSAGES = {
-    'turn': '{} ходят',
-    'check': '{} под шахом!',
-    'checkmate': 'Мат! {} победили!',
+    'turn': "{}'s turn",
+    'check': '{} is in check!',
+    'checkmate': 'Checkmate! {} wins!',
 }
+
+# Загрузка изображений
+PIECES_IMAGES = {}
+BOARD_IMAGE = None
+
+def load_images():
+    global PIECES_IMAGES, BOARD_IMAGE
+    pieces = ['pawn', 'rook', 'knight', 'bishop', 'queen', 'king']
+    colors = ['white', 'black']
+    
+    piece_width = int(SQUARE_SIZE * 0.6)  # Width remains at 60% of square
+    piece_height = int(SQUARE_SIZE * 0.7)  # Height is 70% of square for slight vertical stretch
+    
+    for piece in pieces:
+        for color in colors:
+            path = os.path.join('assets', 'chess_green', f'{color}_{piece}.png')
+            img = pygame.image.load(path)
+            img = pygame.transform.scale(img, (piece_width, piece_height))
+            PIECES_IMAGES[f'{color}_{piece}'] = img
+    
+    # Загрузка изображения доски
+    board_path = os.path.join('assets', 'chess_green', 'board.png')
+    BOARD_IMAGE = pygame.image.load(board_path)
+    BOARD_IMAGE = pygame.transform.scale(BOARD_IMAGE, (WINDOW_SIZE, WINDOW_SIZE))
 
 # Initialize the screen
 screen = pygame.display.set_mode((WINDOW_SIZE, TOTAL_HEIGHT))
-pygame.display.set_caption('Шахматы')
+pygame.display.set_caption('Chess')
 
 class Piece:
     def __init__(self, color: str, piece_type: str, position: Tuple[int, int]):
@@ -50,93 +87,15 @@ class Piece:
         self.has_moved = False
 
     def draw(self, surface: pygame.Surface):
-        x = self.position[1] * SQUARE_SIZE + SQUARE_SIZE // 2
-        y = self.position[0] * SQUARE_SIZE + SQUARE_SIZE // 2
-        
-        # Draw different shapes for different pieces with improved visuals
-        if self.piece_type == 'pawn':
-            if self.color == 'white':
-                pygame.draw.circle(surface, WHITE, (x, y), SQUARE_SIZE // 4)
-                pygame.draw.circle(surface, BLACK, (x, y), SQUARE_SIZE // 4, 2)
-            else:
-                pygame.draw.circle(surface, BLACK, (x, y), SQUARE_SIZE // 4)
-                pygame.draw.circle(surface, WHITE, (x, y), SQUARE_SIZE // 4, 1)
-        
-        elif self.piece_type == 'rook':
-            rect_size = SQUARE_SIZE // 2
-            if self.color == 'white':
-                pygame.draw.rect(surface, WHITE, (x - rect_size//2, y - rect_size//2, rect_size, rect_size))
-                pygame.draw.rect(surface, BLACK, (x - rect_size//2, y - rect_size//2, rect_size, rect_size), 2)
-                # Add details
-                pygame.draw.rect(surface, BLACK, (x - rect_size//4, y - rect_size//3, rect_size//2, rect_size//6), 1)
-            else:
-                pygame.draw.rect(surface, BLACK, (x - rect_size//2, y - rect_size//2, rect_size, rect_size))
-                pygame.draw.rect(surface, WHITE, (x - rect_size//2, y - rect_size//2, rect_size, rect_size), 1)
-                pygame.draw.rect(surface, WHITE, (x - rect_size//4, y - rect_size//3, rect_size//2, rect_size//6), 1)
-        
-        elif self.piece_type == 'knight':
-            size = SQUARE_SIZE // 3
-            points = [
-                (x - size, y + size),
-                (x - size//2, y - size),
-                (x + size//2, y - size),
-                (x + size, y + size),
-                (x, y + size//2)
-            ]
-            if self.color == 'white':
-                pygame.draw.polygon(surface, WHITE, points)
-                pygame.draw.polygon(surface, BLACK, points, 2)
-            else:
-                pygame.draw.polygon(surface, BLACK, points)
-                pygame.draw.polygon(surface, WHITE, points, 1)
-        
-        elif self.piece_type == 'bishop':
-            size = SQUARE_SIZE // 3
-            points = [
-                (x, y - size),
-                (x - size, y + size),
-                (x + size, y + size)
-            ]
-            if self.color == 'white':
-                pygame.draw.polygon(surface, WHITE, points)
-                pygame.draw.polygon(surface, BLACK, points, 2)
-                pygame.draw.circle(surface, BLACK, (x, y), size//3, 1)
-            else:
-                pygame.draw.polygon(surface, BLACK, points)
-                pygame.draw.polygon(surface, WHITE, points, 1)
-                pygame.draw.circle(surface, WHITE, (x, y), size//3, 1)
-        
-        elif self.piece_type == 'queen':
-            if self.color == 'white':
-                pygame.draw.circle(surface, WHITE, (x, y), SQUARE_SIZE // 3)
-                pygame.draw.circle(surface, BLACK, (x, y), SQUARE_SIZE // 3, 2)
-                # Add crown details
-                points = [(x + (SQUARE_SIZE//6) * math.cos(math.pi/6 * i),
-                          y + (SQUARE_SIZE//6) * math.sin(math.pi/6 * i))
-                         for i in range(6)]
-                pygame.draw.polygon(surface, BLACK, points, 1)
-            else:
-                pygame.draw.circle(surface, BLACK, (x, y), SQUARE_SIZE // 3)
-                pygame.draw.circle(surface, WHITE, (x, y), SQUARE_SIZE // 3, 1)
-                points = [(x + (SQUARE_SIZE//6) * math.cos(math.pi/6 * i),
-                          y + (SQUARE_SIZE//6) * math.sin(math.pi/6 * i))
-                         for i in range(6)]
-                pygame.draw.polygon(surface, WHITE, points, 1)
-        
-        elif self.piece_type == 'king':
-            if self.color == 'white':
-                pygame.draw.circle(surface, WHITE, (x, y), SQUARE_SIZE // 3)
-                pygame.draw.circle(surface, BLACK, (x, y), SQUARE_SIZE // 3, 2)
-                # Add cross
-                size = SQUARE_SIZE // 4
-                pygame.draw.line(surface, BLACK, (x, y - size), (x, y + size), 2)
-                pygame.draw.line(surface, BLACK, (x - size, y), (x + size, y), 2)
-            else:
-                pygame.draw.circle(surface, BLACK, (x, y), SQUARE_SIZE // 3)
-                pygame.draw.circle(surface, WHITE, (x, y), SQUARE_SIZE // 3, 1)
-                size = SQUARE_SIZE // 4
-                pygame.draw.line(surface, WHITE, (x, y - size), (x, y + size), 2)
-                pygame.draw.line(surface, WHITE, (x - size, y), (x + size, y), 2)
+        piece_key = f'{self.color}_{self.piece_type}'
+        if piece_key in PIECES_IMAGES:
+            piece_img = PIECES_IMAGES[piece_key]
+            piece_width = piece_img.get_width()
+            piece_height = piece_img.get_height()
+            # Calculate center position
+            x = self.position[1] * SQUARE_SIZE + (SQUARE_SIZE - piece_width) // 2
+            y = self.position[0] * SQUARE_SIZE + (SQUARE_SIZE - piece_height) // 2
+            surface.blit(piece_img, (x, y))
 
 class ChessBoard:
     def __init__(self):
@@ -150,6 +109,9 @@ class ChessBoard:
         self.is_check = False
         self.is_checkmate = False
         self.game_over = False
+        self.ai_move_from = None
+        self.ai_move_to = None
+        self.ai_move_display_time = 0
 
     def initialize_board(self):
         # Initialize pawns
@@ -164,22 +126,33 @@ class ChessBoard:
             self.board[7][col] = Piece('white', piece_order[col], (7, col))
 
     def draw(self, surface: pygame.Surface):
-        # Draw the chess board
-        for row in range(BOARD_SIZE):
-            for col in range(BOARD_SIZE):
-                color = WHITE if (row + col) % 2 == 0 else GRAY
-                pygame.draw.rect(surface, color, 
-                               (col * SQUARE_SIZE, row * SQUARE_SIZE, SQUARE_SIZE, SQUARE_SIZE))
-
-        # Draw the pieces
+        # Отрисовка доски
+        if BOARD_IMAGE:
+            surface.blit(BOARD_IMAGE, (0, 0))
+        
+        # Отрисовка фигур
         for row in range(BOARD_SIZE):
             for col in range(BOARD_SIZE):
                 piece = self.board[row][col]
                 if piece:
                     piece.draw(surface)
 
-        # Highlight selected piece and valid moves
-        if self.selected_piece:
+        current_time = pygame.time.get_ticks()
+        if self.ai_move_from and self.ai_move_to and current_time - self.ai_move_display_time < 1000:
+            # Подсветка начальной позиции ИИ
+            s = pygame.Surface((SQUARE_SIZE, SQUARE_SIZE), pygame.SRCALPHA)
+            pygame.draw.rect(s, (*BLUE[:3], 128), s.get_rect())
+            surface.blit(s, (self.ai_move_from[1] * SQUARE_SIZE, self.ai_move_from[0] * SQUARE_SIZE))
+            
+            # Подсветка конечной позиции ИИ
+            s = pygame.Surface((SQUARE_SIZE, SQUARE_SIZE), pygame.SRCALPHA)
+            pygame.draw.rect(s, (*RED_HIGHLIGHT[:3], 128), s.get_rect())
+            surface.blit(s, (self.ai_move_to[1] * SQUARE_SIZE, self.ai_move_to[0] * SQUARE_SIZE))
+        elif current_time - self.ai_move_display_time >= 1000:
+            self.ai_move_from = None
+            self.ai_move_to = None
+            
+        if self.selected_piece and not (self.ai_move_from and self.ai_move_to):
             row, col = self.selected_piece.position
             s = pygame.Surface((SQUARE_SIZE, SQUARE_SIZE), pygame.SRCALPHA)
             pygame.draw.rect(s, HIGHLIGHT, s.get_rect())
@@ -190,7 +163,6 @@ class ChessBoard:
                 pygame.draw.rect(s, MOVE_HIGHLIGHT, s.get_rect())
                 surface.blit(s, (move[1] * SQUARE_SIZE, move[0] * SQUARE_SIZE))
 
-        # Highlight king in check
         if self.is_check:
             king_pos = self.white_king_pos if self.current_turn == 'white' else self.black_king_pos
             s = pygame.Surface((SQUARE_SIZE, SQUARE_SIZE), pygame.SRCALPHA)
@@ -365,6 +337,7 @@ class ChessBoard:
             # Check if white pawn reached top row (0) or black pawn reached bottom row (7)
             if (piece.color == 'white' and end_row == 0) or (piece.color == 'black' and end_row == 7):
                 # Promote to queen
+                print(f"Превращение пешки в ферзя на позиции {(end_row, piece.position[1])}")
                 return Piece(piece.color, 'queen', (end_row, piece.position[1]))
         return piece
 
@@ -374,33 +347,34 @@ class ChessBoard:
         piece = self.board[start_row][start_col]
         
         if piece and (end_row, end_col) in self.valid_moves:
-            # Move the piece
-            # Check for pawn promotion
             piece = self.check_pawn_promotion(piece, end_row)
+            
+            captured_piece = self.board[end_row][end_col]
+            if captured_piece:
+                print(f"Взятие: {piece.piece_type} берет {captured_piece.piece_type} на {(end_row, end_col)}")
             
             self.board[end_row][end_col] = piece
             self.board[start_row][start_col] = None
             piece.position = (end_row, end_col)
             piece.has_moved = True
 
-            # Update king position if moving king
             if piece.piece_type == 'king':
                 if piece.color == 'white':
                     self.white_king_pos = (end_row, end_col)
                 else:
                     self.black_king_pos = (end_row, end_col)
 
-            # Switch turns
             self.current_turn = 'black' if self.current_turn == 'white' else 'white'
 
-            # Check if the opponent is in check
             king_pos = self.black_king_pos if self.current_turn == 'black' else self.white_king_pos
             self.is_check = self.is_position_under_attack(king_pos, self.current_turn)
-
-            # Check for checkmate
+            
             if self.is_check:
+                print(f"{COLORS[self.current_turn]} под шахом!")
                 self.is_checkmate = self.is_in_checkmate()
                 if self.is_checkmate:
+                    winner = 'white' if self.current_turn == 'black' else 'black'
+                    print(f"Мат! {COLORS[winner]} победили!")
                     self.game_over = True
 
             return True
@@ -410,20 +384,49 @@ class ChessAI:
     def __init__(self, board: 'ChessBoard', color: str):
         self.board = board
         self.color = color
+        print(f"AI initialized. Playing as {COLORS[color]}")
 
-    def make_move(self):
+    def make_move(self) -> bool:
+        if self.board.current_turn != self.color:
+            print(f"Not AI's turn. Current turn: {COLORS[self.board.current_turn]}")
+            return False
+            
+        print("\nAI starts searching for possible moves...")
         all_moves = []
         for row in range(BOARD_SIZE):
             for col in range(BOARD_SIZE):
                 piece = self.board.board[row][col]
                 if piece and piece.color == self.color:
                     valid_moves = self.board.get_all_valid_moves(piece)
-                    for move in valid_moves:
-                        all_moves.append((piece.position, move))
+                    if valid_moves:
+                        print(f"Found moves for {piece.piece_type} at position {piece.position}: {valid_moves}")
+                        all_moves.append((piece, valid_moves))
+        
+        print(f"Total pieces with possible moves found: {len(all_moves)}")
         
         if all_moves:
-            start, end = random.choice(all_moves)
-            self.board.move_piece(start, end)
+            piece, valid_moves = random.choice(all_moves)
+            end = random.choice(valid_moves)
+            start = piece.position
+            print(f"AI chose move: {piece.piece_type} from {start} to {end}")
+            
+            self.board.selected_piece = piece
+            self.board.valid_moves = valid_moves
+            
+            success = self.board.move_piece(start, end)
+            if success:
+                self.board.ai_move_from = start
+                self.board.ai_move_to = end
+                self.board.ai_move_display_time = pygame.time.get_ticks()
+                self.board.selected_piece = None
+                self.board.valid_moves = []
+                print("Move successfully executed")
+            else:
+                print("Error executing move")
+            return success
+        else:
+            print("AI found no possible moves")
+            return False
 
 class ChessGame:
     def __init__(self, screen):
@@ -432,40 +435,44 @@ class ChessGame:
         self.ai = None
         self.game_mode = None
         self.clock = pygame.time.Clock()
-        self.font = pygame.font.SysFont('Arial', 32)
+        self.font = GAME_FONT
         self.paused = False
         self.running = True
         self.create_menus()
 
     def create_menus(self):
-        theme = pygame_menu.themes.Theme(
-            background_color=(50, 50, 50),
-            title_background_color=(0, 0, 0),
-            title_font_size=30,
-            widget_padding=25
-        )
+        mytheme = pygame_menu.themes.THEME_DARK.copy()
+        mytheme.background_color = (50, 50, 50)
+        mytheme.title_background_color = (0, 0, 0)
+        mytheme.title_font_size = MENU_FONT_SIZE
+        mytheme.widget_font_size = FONT_SIZE
+        mytheme.widget_padding = 25
+        
+        # Используем тот же шрифт для меню
+        mytheme.widget_font = FONT_PATH
+        mytheme.title_font = FONT_PATH
 
         self.main_menu = pygame_menu.Menu(
             height=TOTAL_HEIGHT,
-            theme=theme,
-            title='Шахматы',
+            theme=mytheme,
+            title='Chess',
             width=WINDOW_SIZE
         )
 
-        self.main_menu.add.button('Игра с собой', self.start_local_game)
-        self.main_menu.add.button('Игра с ИИ', self.start_ai_game)
-        self.main_menu.add.button('Выход', pygame_menu.events.EXIT)
+        self.main_menu.add.button('Local Game', self.start_local_game)
+        self.main_menu.add.button('Play vs AI', self.start_ai_game)
+        self.main_menu.add.button('Exit', pygame_menu.events.EXIT)
 
         self.pause_menu = pygame_menu.Menu(
             height=TOTAL_HEIGHT,
-            theme=theme,
-            title='Пауза',
+            theme=mytheme,
+            title='Pause',
             width=WINDOW_SIZE
         )
 
-        self.pause_menu.add.button('Продолжить', self.unpause)
-        self.pause_menu.add.button('В главное меню', self.to_main_menu)
-        self.pause_menu.add.button('Выход', pygame_menu.events.EXIT)
+        self.pause_menu.add.button('Continue', self.unpause)
+        self.pause_menu.add.button('Main Menu', self.to_main_menu)
+        self.pause_menu.add.button('Exit', pygame_menu.events.EXIT)
 
     def start_local_game(self):
         self.game_mode = 'local'
@@ -518,8 +525,6 @@ class ChessGame:
                         if self.board.move_piece(self.board.selected_piece.position, (row, col)):
                             self.board.selected_piece = None
                             self.board.valid_moves = []
-                            if self.game_mode == 'ai' and not self.board.game_over:
-                                self.ai.make_move()
                         elif clicked_piece and clicked_piece.color == self.board.current_turn:
                             self.board.selected_piece = clicked_piece
                             self.board.valid_moves = self.board.get_all_valid_moves(clicked_piece)
@@ -561,6 +566,11 @@ class ChessGame:
                 continue
             
             self.handle_events()
+            
+            if self.board and self.game_mode == 'ai' and not self.board.game_over and not self.paused:
+                if self.board.current_turn == 'black':
+                    self.ai.make_move()
+            
             if self.board:
                 self.draw_game()
             self.clock.tick(60)
@@ -578,6 +588,7 @@ def draw_message_box(surface: pygame.Surface, message: str, font: pygame.font.Fo
     surface.blit(text, text_rect)
 
 def main():
+    load_images()  # Load images before starting the game
     game = ChessGame(screen)
     game.main_menu.mainloop(screen)
 
